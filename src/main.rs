@@ -1,9 +1,10 @@
-use std::net::SocketAddr;
 use std::convert::Infallible;
+use std::net::SocketAddr;
 use std::str;
-use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Method, Request, Response, StatusCode, Server};
+
 use csv::Reader;
+use hyper::{Body, Method, Request, Response, Server, StatusCode};
+use hyper::service::{make_service_fn, service_fn};
 
 /// This is our service handler. It receives a Request, routes on its
 /// path, and returns a Future of a Response.
@@ -16,20 +17,28 @@ async fn handle_request(req: Request<Body>) -> Result<Response<Body>, anyhow::Er
 
         (&Method::POST, "/find_rate") => {
             let post_body = hyper::body::to_bytes(req.into_body()).await?;
-            let mut rate = "0.08".to_string(); // default is 8%
-
             let rates_data: &[u8] = include_bytes!("rates_by_zipcode.csv");
             let mut rdr = Reader::from_reader(rates_data);
-            for result in rdr.records() {
-                let record = result?;
-                // dbg!("{:?}", record.clone());
-                if str::from_utf8(&post_body).unwrap().eq(&record[0]) {
-                    rate = record[1].to_string();
-                    break;
-                }
-            }
-
-            Ok(Response::new(Body::from(rate)))
+            rdr
+                .records()
+                .find_map(|result| {
+                    result
+                        .iter()
+                        .find(|record| {
+                            let code = str::from_utf8(&post_body).unwrap().trim();
+                            code.eq(&record[0])
+                        })
+                        .map(|record| record[1].to_string())
+                })
+                .map(|rate| Ok(Response::new(Body::from(rate))))
+                .unwrap_or_else(|| {
+                    let res =
+                        Response::builder()
+                            .status(StatusCode::NOT_FOUND)
+                            .body(Body::from("Not Found"))
+                            .unwrap();
+                    Ok(res)
+                })
         }
 
         // Return the 404 Not Found for other routes.
