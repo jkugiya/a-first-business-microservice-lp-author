@@ -33,13 +33,13 @@ jobs:
         
     - name: Install WasmEdge
       run: |
-        VERSION=0.11.2
+        VERSION=0.13.4
         curl -sSf https://raw.githubusercontent.com/WasmEdge/WasmEdge/master/utils/install.sh | sudo bash -s -- -e all --version=$VERSION -p /usr/local
-    
+
     - name: microservice
       run: |
         cargo build --target wasm32-wasi --release
-        wasmedgec target/wasm32-wasi/release/sales_tax_rate_lookup.wasm sales_tax_rate_lookup.wasm
+        wasmedge compile target/wasm32-wasi/release/sales_tax_rate_lookup.wasm sales_tax_rate_lookup.wasm
         nohup wasmedge sales_tax_rate_lookup.wasm &
         echo $! > wasmedge.pid
         sleep 15
@@ -51,9 +51,17 @@ jobs:
           echo -e "Execution Fail!"
           exit 1
         fi
+        resp=$(curl http://localhost:8001/find_rate -X POST -d "89102")
+        echo "$resp"
+        if [[ $resp == "0.08375" ]]; then
+          echo -e "Execution Success!"
+        else
+          echo -e "Execution Fail!"
+          exit 1
+        fi
         resp=$(curl http://localhost:8001/find_rate -X POST -d "12345")
         echo "$resp"
-        if [[ $resp == "0.08" ]]; then
+        if [[ $resp == "Not Found" ]]; then
           echo -e "Execution Success!"
         else
           echo -e "Execution Fail!"
